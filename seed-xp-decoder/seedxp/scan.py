@@ -304,7 +304,28 @@ def scan_file(path: Path) -> list[XpTable]:
     if kind == "text":
         return _scan_embedded_json(data, str(path))
 
-    return []
+    # Unity serialized files (`.assets`, `globalgamemanagers`) and .NET
+    # assemblies are opaque binaries, but the config tables inside them are
+    # still stored as readable strings, so carve JSON straight out of them.
+    return _scan_binary(data, str(path))
+
+
+def _scan_binary(data: bytes, source: str) -> list[XpTable]:
+    """Carve JSON out of a binary, trying both UTF-8 and UTF-16LE.
+
+    .NET assemblies keep their string literals in UTF-16, so a byte-level
+    search for `{` finds nothing without the second pass.
+    """
+    found = _scan_embedded_json(data, source)
+
+    try:
+        widened = data.decode("utf-16-le", errors="ignore").encode("utf-8")
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        return found
+    for table in _scan_embedded_json(widened, f"{source}#utf16"):
+        table.notes.append("recovered from UTF-16 string data")
+        found.append(table)
+    return found
 
 
 def _scan_bundle(path: Path) -> list[XpTable]:

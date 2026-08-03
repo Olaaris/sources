@@ -14,6 +14,7 @@ __all__ = [
     "locate",
     "magic",
     "scan",
+    "strings",
     "tables",
     "unityfs",
 ]

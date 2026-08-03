@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import export, inventory, locate, scan, unityfs
+from . import export, inventory, locate, scan, strings, unityfs
 from .curves import fit_all
 from .tables import merge
 
@@ -104,6 +104,34 @@ def cmd_unpack(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_strings(args: argparse.Namespace) -> int:
+    target = Path(args.path).expanduser()
+    if not target.exists():
+        print(f"chemin introuvable : {target}", file=sys.stderr)
+        return 1
+
+    if target.is_file():
+        hits = {str(target): strings.search(target, args.pattern, args.min_length)}
+        hits = {k: v for k, v in hits.items() if v}
+    else:
+        hits = strings.search_tree(target, args.pattern, args.min_length)
+
+    if not hits:
+        print("Aucune chaine correspondante.", file=sys.stderr)
+        return 1
+
+    lines: list[str] = []
+    for source, found in hits.items():
+        lines.append(f"\n=== {source}  ({len(found)} chaine(s))")
+        for item in found[: args.limit]:
+            lines.append(f"  {item.offset:>10} [{item.encoding:<6}] {item.text}")
+        if len(found) > args.limit:
+            lines.append(f"  ... {len(found) - args.limit} de plus")
+
+    _write(args.output, "\n".join(lines))
+    return 0
+
+
 def cmd_decode(args: argparse.Namespace) -> int:
     root = _resolve_root(args.path)
     if root is None:
@@ -168,6 +196,22 @@ def build_parser() -> argparse.ArgumentParser:
         "-d", "--dest", default="unpacked", help="dossier de destination"
     )
     unpack_parser.set_defaults(func=cmd_unpack)
+
+    strings_parser = subparsers.add_parser(
+        "strings", help="reperer les chaines liees aux skills dans un binaire"
+    )
+    strings_parser.add_argument("path", help="fichier ou dossier a inspecter")
+    strings_parser.add_argument(
+        "-p", "--pattern", help="regex a chercher (defaut : indices skill/niveau/xp)"
+    )
+    strings_parser.add_argument(
+        "--min-length", type=int, default=6, help="longueur minimale d'une chaine"
+    )
+    strings_parser.add_argument(
+        "--limit", type=int, default=60, help="chaines affichees par fichier"
+    )
+    strings_parser.add_argument("-o", "--output", help="fichier de sortie")
+    strings_parser.set_defaults(func=cmd_strings)
 
     decode_parser = subparsers.add_parser(
         "decode", help="extraire les tables d'XP et ajuster une formule"

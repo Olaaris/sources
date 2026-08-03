@@ -74,12 +74,17 @@ la formule ajustée et sa qualité.
 | Localisation | `locate.py` | chemins par défaut du launcher, Steam/Proton, Wine |
 | Classement | `magic.py`, `inventory.py` | type réel de chaque fichier (magic bytes), pas l'extension |
 | Conteneurs | `unityfs.py`, `lz4.py` | en-tête et répertoire UnityFS, blocs LZ4/LZMA, décodeur LZ4 en Python pur |
+| Repérage | `strings.py` | chaînes lisibles d'un binaire (UTF-8 et UTF-16), filtrées sur les indices skill/niveau/xp |
 | Découverte | `scan.py` | quatre formes reconnues (ci-dessous) + JSON noyé dans du binaire |
 | Modèle | `tables.py` | cumulé ↔ incrémental, fusion des doublons |
 | Formule | `curves.py` | ajustement linéaire, quadratique, cubique, exponentiel, puissance, RuneScape |
 | Rendu | `export.py` | JSON, CSV, Markdown |
 
 Les quatre formes reconnues par le scanner :
+
+Les binaires opaques — fichiers Unity `.assets`, assemblies .NET — sont eux aussi
+fouillés : le JSON y est découpé en UTF-8 **et** en UTF-16, parce que .NET stocke
+ses littéraux de chaîne sur deux octets.
 
 1. série numérique nommée — `{"Farming": [0, 83, 174, ...]}`
 2. lignes avec un champ niveau et un champ XP — `[{"skill": ..., "level": 1, "xpRequired": 0}, ...]`
