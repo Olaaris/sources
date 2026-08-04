@@ -8,27 +8,33 @@ Zéro dépendance : Python 3.11+ et la bibliothèque standard uniquement.
 
 ---
 
-## État actuel : aucune valeur n'a encore été décodée
+## État actuel : le schéma est connu, les valeurs sont côté serveur
 
-Ce dépôt ne contient **aucune donnée de jeu**, et les tables d'XP de SEED n'y
-figurent pas. Raison : SEED est un jeu payant (à partir de 29,99 $), distribué
-uniquement via le launcher propriétaire Klang sur Windows x64 et macOS arm64,
-derrière un compte. L'outil a été écrit sans accès à une copie du jeu, donc :
+Ce dépôt ne contient **aucune donnée de jeu**. L'analyse du client Early Access
+(build `ea7fd000…`, 3,1 Go) a établi deux choses :
 
-- il ne présume **rien** du schéma exact de SEED ;
-- il reconnaît les *formes* que prennent les tables d'XP dans les jeux publiés
-  (voir « Comment ça marche ») plutôt qu'un format connu à l'avance ;
-- tout ce qu'il remonte est un **candidat**, validé ensuite par la forme de la
-  courbe et par la qualité de l'ajustement.
+**Le schéma de progression est entièrement relevé** — voir
+[`docs/static-data-schema.md`](docs/static-data-schema.md). La courbe d'XP par
+skill est **linéaire par morceaux** : `SkillTier` porte `StartLevel`, `EndLevel`
+et `XPPerLevel`, et `Skill.BaseExperiencePerSimHour` donne le taux de gain. Les
+niveaux de compte suivent une autre logique, avec un `RequiredXP` explicite.
 
-### Le risque à connaître avant de commencer
+**Les valeurs, elles, ne sont dans aucun fichier.** Ont été écartés, dans cet
+ordre :
 
-SEED est une simulation MMO persistante et toujours en ligne. Dans ce genre de
-jeu, la progression est souvent **autoritative côté serveur** : les courbes d'XP
-peuvent ne jamais être livrées dans le client. Si c'est le cas ici, aucun
-datamining du client ne les fera apparaître — `seedxp decode` ne trouvera rien,
-et ce sera une réponse, pas un bug. Commence par `inventory` pour voir ce que le
-client embarque réellement.
+| Piste | Résultat |
+| --- | --- |
+| `StaticData.dll` | schéma et `Deserialize` seulement, aucune valeur embarquée |
+| `.assets` de l'installation | aucun blob de données ; `sharedassets0` à zéro |
+| Cache et catalogues Addressables | assets visuels uniquement |
+| `persistentDataPath` (`LocalLow`) | catalogues, photos, télémétrie — rien d'autre |
+
+Le client embarque le schéma pour désérialiser un flux que le service de
+configuration de Klang lui envoie à la connexion. C'est une réponse, pas un
+échec : `decode` ne trouvera rien sur cette installation, et c'est normal.
+
+La commande `tiers` existe pour cette raison : quelques paliers relevés à la
+main dans le jeu suffisent à reconstituer la table complète.
 
 ---
 
@@ -58,11 +64,22 @@ python3 -m seedxp inventory --path "C:/Program Files/Klang Games/SEED"
 # 3. Extraire les bundles Unity (optionnel : decode les lit déjà en mémoire)
 python3 -m seedxp unpack "SEED_Data/StreamingAssets" -d unpacked/
 
-# 4. Décoder les tables d'XP
+# 4. Décoder les tables d'XP présentes dans les fichiers
 python3 -m seedxp decode --path <install> --format markdown -o xp.md
 python3 -m seedxp decode --path <install> --format json     -o xp.json
 python3 -m seedxp decode --path <install> --format csv      -o xp.csv
+
+# 5. Reconstituer une table depuis des paliers relevés à la main
+python3 -m seedxp tiers -s Farming \
+  -t "Novice:1-10:100" -t "Adepte:11-20:250" -f markdown
+
+# ... ou depuis un JSON aux noms de champs du jeu
+python3 -m seedxp tiers -F skill_progression.json -s Farming -o farming.csv
 ```
+
+`tiers` signale les trous et les chevauchements entre paliers plutôt que de
+produire silencieusement une table fausse — une valeur mal recopiée fausserait
+tous les niveaux au-dessus.
 
 Sortie Markdown, par skill : niveau, XP cumulé, XP vers le niveau suivant, plus
 la formule ajustée et sa qualité.
@@ -112,7 +129,7 @@ une coïncidence, c'est la formule d'origine.
 python3 -m unittest discover -s tests -v
 ```
 
-49 tests, sans réseau ni données de jeu. Ils couvrent le décodeur LZ4 (runs
+77 tests, sans réseau ni données de jeu. Ils couvrent le décodeur LZ4 (runs
 littéraux longs, matches chevauchants, entrées malformées), le lecteur UnityFS
 (v6 et v7 avec alignement, blocs compressés, refus de traversée de chemin), les
 quatre formes de tables, l'ajustement de courbes, les exports, et un test de bout

@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import export, inventory, locate, scan, strings, unityfs
+from . import export, inventory, locate, progression, scan, strings, unityfs
 from .curves import fit_all
 from .tables import merge
 
@@ -132,6 +132,25 @@ def cmd_strings(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tiers(args: argparse.Namespace) -> int:
+    try:
+        if args.file:
+            tiers = progression.load_tiers(Path(args.file).expanduser())
+        else:
+            tiers = [progression.parse_tier(spec) for spec in args.tier]
+        table = progression.build_table(tiers, skill=args.skill, max_level=args.max_level)
+    except (progression.TierError, ValueError, OSError) as error:
+        print(f"paliers invalides : {error}", file=sys.stderr)
+        return 1
+
+    for problem in progression.validate(tiers):
+        print(f"attention : {problem}", file=sys.stderr)
+
+    fits = fit_all(table)
+    _write(args.output, export.render([(table, fits[0] if fits else None)], args.format))
+    return 0
+
+
 def cmd_decode(args: argparse.Namespace) -> int:
     root = _resolve_root(args.path)
     if root is None:
@@ -212,6 +231,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     strings_parser.add_argument("-o", "--output", help="fichier de sortie")
     strings_parser.set_defaults(func=cmd_strings)
+
+    tiers_parser = subparsers.add_parser(
+        "tiers", help="reconstruire la table complete depuis les paliers SkillTier"
+    )
+    tiers_parser.add_argument(
+        "-t", "--tier", action="append", default=[],
+        help="palier 'Nom:debut-fin:xpParNiveau' (repetable)")
+    tiers_parser.add_argument("-F", "--file", help="JSON de SkillProgressionConfig")
+    tiers_parser.add_argument("-s", "--skill", default="Skill", help="nom du skill")
+    tiers_parser.add_argument("--max-level", type=int, help="niveau maximum")
+    tiers_parser.add_argument("-f", "--format", default="markdown", help="json, csv ou markdown")
+    tiers_parser.add_argument("-o", "--output", help="fichier de sortie")
+    tiers_parser.set_defaults(func=cmd_tiers)
 
     decode_parser = subparsers.add_parser(
         "decode", help="extraire les tables d'XP et ajuster une formule"
