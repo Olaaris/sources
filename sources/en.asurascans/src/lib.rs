@@ -113,7 +113,8 @@ impl Source for AsuraScans {
 		needs_chapters: bool,
 	) -> Result<Manga> {
 		let url = helpers::get_manga_url(&manga.key);
-		let html = Request::get(&url)?.html()?;
+		let response = Request::get(&url)?.send()?;
+		let html = response.get_html()?;
 
 		if needs_details {
 			manga.title = html
@@ -182,7 +183,17 @@ impl Source for AsuraScans {
 			let island_props = html
 				.select_first("[props*=chapters]")
 				.and_then(|el| el.attr("props"))
-				.ok_or_else(|| error!("Missing chapter data"))?;
+				.ok_or_else(|| {
+					let title = html
+						.select_first("title")
+						.and_then(|el| el.text())
+						.unwrap_or_else(|| "No page title".into());
+					let status = response.status_code();
+					let final_url = response
+						.get_url()
+						.unwrap_or_else(|| helpers::get_manga_url(&manga.key));
+					error!("Missing chapter data (HTTP {status}; {title}; {final_url})")
+				})?;
 
 			let json = serde_json::from_str::<serde_json::Value>(&island_props)?;
 			let chapters_arr = json["chapters"][1]
