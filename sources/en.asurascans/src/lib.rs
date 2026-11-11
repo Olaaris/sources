@@ -178,11 +178,11 @@ impl Source for AsuraScans {
 		}
 
 		if needs_chapters {
-			// Match the data property because Astro component names can change.
+			// Match the data property because Astro component and tag names can change.
 			let island_props = html
-				.select_first("astro-island[props*=chapters]")
+				.select_first("[props*=chapters]")
 				.and_then(|el| el.attr("props"))
-				.ok_or_else(|| error!("Missing astro-island"))?;
+				.ok_or_else(|| error!("Missing chapter data"))?;
 
 			let json = serde_json::from_str::<serde_json::Value>(&island_props)?;
 			let chapters_arr = json["chapters"][1]
@@ -281,9 +281,9 @@ impl Source for AsuraScans {
 		let html = req.html()?;
 
 		let island_props = html
-			.select_first("astro-island[props*=pages]")
+			.select_first("[props*=pages]")
 			.and_then(|el| el.attr("props"))
-			.ok_or_else(|| error!("Missing astro-island"))?;
+			.ok_or_else(|| error!("Missing reader data"))?;
 
 		let json = serde_json::from_str::<serde_json::Value>(&island_props)?;
 
