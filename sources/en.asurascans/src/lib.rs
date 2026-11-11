@@ -178,6 +178,7 @@ impl Source for AsuraScans {
 		}
 
 		if needs_chapters {
+			// Match the data property because Astro component names can change.
 			let island_props = html
 				.select_first("astro-island[props*=chapters]")
 				.and_then(|el| el.attr("props"))
