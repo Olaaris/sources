@@ -26,10 +26,13 @@ pub fn get_html(request: Request) -> Result<Document> {
 		.get_url()
 		.ok_or_else(|| error!("Missing response URL"))?;
 	let webview = WebView::new();
-	webview.load_blocking(Request::get(&url)?)?;
-	let document = webview.eval_async(
-		r#"
-  return await new Promise(resolve => {
+	webview
+		.load_blocking(Request::get(&url)?)
+		.map_err(|err| error!("Cloudflare WebView load failed: {err:?}"))?;
+	let document = webview
+		.eval_async(
+			r#"
+  new Promise(resolve => {
    const deadline = Date.now() + 15000;
    const check = () => {
     const blocked = document.title.startsWith('Just a moment')
@@ -39,9 +42,10 @@ pub fn get_html(request: Request) -> Result<Document> {
     setTimeout(check, 250);
    };
    check();
-  });
+  })
  "#,
-	)?;
+		)
+		.map_err(|err| error!("Cloudflare WebView evaluation failed: {err:?}"))?;
 	if document.is_empty() {
 		bail!(
 			"Cloudflare verification required. Open Asura Scans in Aidoku's browser, complete verification, then retry."
