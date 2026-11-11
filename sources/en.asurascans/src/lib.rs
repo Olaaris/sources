@@ -179,9 +179,7 @@ impl Source for AsuraScans {
 
 		if needs_chapters {
 			let island_props = html
-				.select_first(
-					"astro-island[component-url*=ChapterListReact], astro-island[opts*=ChapterListReact]",
-				)
+				.select_first("astro-island[props*=chapters]")
 				.and_then(|el| el.attr("props"))
 				.ok_or_else(|| error!("Missing astro-island"))?;
 
@@ -282,9 +280,7 @@ impl Source for AsuraScans {
 		let html = req.html()?;
 
 		let island_props = html
-			.select_first(
-				"astro-island[component-url*=ChapterReader], astro-island[opts*=ChapterReader]",
-			)
+			.select_first("astro-island[props*=pages]")
 			.and_then(|el| el.attr("props"))
 			.ok_or_else(|| error!("Missing astro-island"))?;
 
