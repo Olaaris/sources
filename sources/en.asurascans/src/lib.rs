@@ -23,12 +23,16 @@ use models::*;
 const BASE_URL: &str = "https://asurascans.com";
 const API_URL: &str = "https://api.asurascans.com/api";
 
-struct AsuraScans;
+struct AsuraScans {
+	html: helpers::HtmlClient,
+}
 
 impl Source for AsuraScans {
 	fn new() -> Self {
 		set_rate_limit(2, 2, TimeUnit::Seconds);
-		Self
+		Self {
+			html: helpers::HtmlClient::default(),
+		}
 	}
 
 	fn get_search_manga_list(
@@ -76,7 +80,7 @@ impl Source for AsuraScans {
 		}
 
 		let url = format!("{BASE_URL}/browse?{qs}");
-		let html = helpers::get_html(Request::get(url)?)?;
+		let html = self.html.get_html(Request::get(url)?)?;
 
 		let entries = html
 			.select("#series-grid > .series-card")
@@ -113,7 +117,7 @@ impl Source for AsuraScans {
 		needs_chapters: bool,
 	) -> Result<Manga> {
 		let url = helpers::get_manga_url(&manga.key);
-		let html = helpers::get_html(Request::get(&url)?)?;
+		let html = self.html.get_html(Request::get(&url)?)?;
 
 		if needs_details {
 			manga.title = html
@@ -278,7 +282,7 @@ impl Source for AsuraScans {
 				),
 			);
 		}
-		let html = helpers::get_html(req)?;
+		let html = self.html.get_html(req)?;
 
 		let island_props = html
 			.select_first("[props*=pages]")
@@ -306,7 +310,7 @@ impl Source for AsuraScans {
 
 impl Home for AsuraScans {
 	fn get_home(&self) -> Result<HomeLayout> {
-		let html = helpers::get_html(Request::get(BASE_URL)?)?;
+		let html = self.html.get_html(Request::get(BASE_URL)?)?;
 
 		let mut components = Vec::new();
 
@@ -436,7 +440,9 @@ impl ListingProvider for AsuraScans {
 	fn get_manga_list(&self, listing: Listing, page: i32) -> Result<MangaPageResult> {
 		match listing.id.as_str() {
 			"Ranking" => {
-				let html = helpers::get_html(Request::get(format!("{BASE_URL}/series-ranking"))?)?;
+				let html = self
+					.html
+					.get_html(Request::get(format!("{BASE_URL}/series-ranking"))?)?;
 				let entries = html
 					.select(".comics-ranking-list > a")
 					.map(|els| {

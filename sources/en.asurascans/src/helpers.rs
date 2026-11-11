@@ -9,25 +9,81 @@ use aidoku::{
 	},
 	prelude::*,
 };
+use core::cell::RefCell;
 
-/// Use WebKit when Cloudflare blocks the native HTTP client.
-pub fn get_html(request: Request) -> Result<Document> {
-	let response = request.send()?;
-	let html = response.get_html()?;
-	let challenged = response.get_header("cf-mitigated").as_deref() == Some("challenge")
-		|| html
-			.select_first("title")
-			.and_then(|el| el.text())
-			.is_some_and(|title| title.starts_with("Just a moment"));
-	if !challenged {
-		return Ok(html);
+/// Reuse the browser session after Cloudflare blocks the native HTTP client.
+#[derive(Default)]
+pub struct HtmlClient {
+	webview: RefCell<Option<WebView>>,
+}
+
+impl HtmlClient {
+	pub fn get_html(&self, request: Request) -> Result<Document> {
+		let mut session = self.webview.borrow_mut();
+		if let Some(webview) = session.as_ref() {
+			let url = request.url().ok_or_else(|| error!("Missing request URL"))?;
+			if let Ok(html) = fetch_html(webview, url) {
+				return Ok(html);
+			}
+			// The clearance may have expired; navigate to allow verification again.
+			return load_html(webview, url);
+		}
+		let response = request.send()?;
+		let html = response.get_html()?;
+		let challenged = response.get_header("cf-mitigated").as_deref() == Some("challenge")
+			|| html
+				.select_first("title")
+				.and_then(|el| el.text())
+				.is_some_and(|title| title.starts_with("Just a moment"));
+		if !challenged {
+			return Ok(html);
+		}
+		let url = response
+			.get_url()
+			.ok_or_else(|| error!("Missing response URL"))?;
+		let webview = WebView::new();
+		let document = load_html(&webview, &url)?;
+		*session = Some(webview);
+		Ok(document)
 	}
-	let url = response
-		.get_url()
-		.ok_or_else(|| error!("Missing response URL"))?;
-	let webview = WebView::new();
+}
+
+/// Fetch only HTML, without loading scripts, images, fonts, or advertisements.
+fn fetch_html(webview: &WebView, url: &str) -> Result<Document> {
+	let target = serde_json::to_string(url)?;
+	let script = format!(
+		r#"
+ (async () => {{
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {{
+   const response = await fetch({target}, {{ credentials: 'include', cache: 'no-store', signal: controller.signal }});
+   return JSON.stringify([response.status, response.url, await response.text()]);
+  }} finally {{ clearTimeout(timeout); }}
+ }})()
+ "#
+	);
+	let result = webview
+		.eval_async(&script)
+		.map_err(|err| error!("Browser HTML request failed: {err:?}"))?;
+	let (status, final_url, body): (u16, String, String) = serde_json::from_str(&result)?;
+	if status >= 400 {
+		bail!("Browser HTML request failed: HTTP {status}");
+	}
+	let html = Html::parse_with_url(body, final_url)?;
+	if html
+		.select_first("title")
+		.and_then(|el| el.text())
+		.is_some_and(|title| title.starts_with("Just a moment"))
+	{
+		bail!("Cloudflare verification expired");
+	}
+	Ok(html)
+}
+
+fn load_html(webview: &WebView, url: &str) -> Result<Document> {
 	webview
-		.load_blocking(Request::get(&url)?)
+		.load_blocking(Request::get(url)?)
 		.map_err(|err| error!("Cloudflare WebView load failed: {err:?}"))?;
 	let document = webview
 		.eval_async(
@@ -51,7 +107,7 @@ pub fn get_html(request: Request) -> Result<Document> {
 			"Cloudflare verification required. Open Asura Scans in Aidoku's browser, complete verification, then retry."
 		);
 	}
-	Ok(Html::parse_with_url(document, &url)?)
+	Ok(Html::parse_with_url(document, url)?)
 }
 
 /// Returns the ID of a manga from a URL.
