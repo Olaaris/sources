@@ -1,5 +1,54 @@
 use crate::BASE_URL;
-use aidoku::{alloc::string::String, prelude::*};
+use aidoku::{
+	Result,
+	alloc::string::String,
+	imports::{
+		html::{Document, Html},
+		js::WebView,
+		net::Request,
+	},
+	prelude::*,
+};
+
+/// Use WebKit when Cloudflare blocks the native HTTP client.
+pub fn get_html(request: Request) -> Result<Document> {
+	let response = request.send()?;
+	let html = response.get_html()?;
+	let challenged = response.get_header("cf-mitigated").as_deref() == Some("challenge")
+		|| html
+			.select_first("title")
+			.and_then(|el| el.text())
+			.is_some_and(|title| title.starts_with("Just a moment"));
+	if !challenged {
+		return Ok(html);
+	}
+	let url = response
+		.get_url()
+		.ok_or_else(|| error!("Missing response URL"))?;
+	let webview = WebView::new();
+	webview.load_blocking(Request::get(&url)?)?;
+	let document = webview.eval_async(
+		r#"
+  return await new Promise(resolve => {
+   const deadline = Date.now() + 15000;
+   const check = () => {
+    const blocked = document.title.startsWith('Just a moment')
+     || document.querySelector('#challenge-error-title, #challenge-error-text');
+    if (!blocked) return resolve(document.documentElement.outerHTML);
+    if (Date.now() >= deadline) return resolve('');
+    setTimeout(check, 250);
+   };
+   check();
+  });
+ "#,
+	)?;
+	if document.is_empty() {
+		bail!(
+			"Cloudflare verification required. Open Asura Scans in Aidoku's browser, complete verification, then retry."
+		);
+	}
+	Ok(Html::parse_with_url(document, &url)?)
+}
 
 /// Returns the ID of a manga from a URL.
 pub fn get_manga_key(url: &str) -> Option<String> {

@@ -76,7 +76,7 @@ impl Source for AsuraScans {
 		}
 
 		let url = format!("{BASE_URL}/browse?{qs}");
-		let html = Request::get(url)?.html()?;
+		let html = helpers::get_html(Request::get(url)?)?;
 
 		let entries = html
 			.select("#series-grid > .series-card")
@@ -113,8 +113,7 @@ impl Source for AsuraScans {
 		needs_chapters: bool,
 	) -> Result<Manga> {
 		let url = helpers::get_manga_url(&manga.key);
-		let response = Request::get(&url)?.send()?;
-		let html = response.get_html()?;
+		let html = helpers::get_html(Request::get(&url)?)?;
 
 		if needs_details {
 			manga.title = html
@@ -183,17 +182,7 @@ impl Source for AsuraScans {
 			let island_props = html
 				.select_first("[props*=chapters]")
 				.and_then(|el| el.attr("props"))
-				.ok_or_else(|| {
-					let title = html
-						.select_first("title")
-						.and_then(|el| el.text())
-						.unwrap_or_else(|| "No page title".into());
-					let status = response.status_code();
-					let final_url = response
-						.get_url()
-						.unwrap_or_else(|| helpers::get_manga_url(&manga.key));
-					error!("Missing chapter data (HTTP {status}; {title}; {final_url})")
-				})?;
+				.ok_or_else(|| error!("Missing chapter data"))?;
 
 			let json = serde_json::from_str::<serde_json::Value>(&island_props)?;
 			let chapters_arr = json["chapters"][1]
@@ -289,7 +278,7 @@ impl Source for AsuraScans {
 				),
 			);
 		}
-		let html = req.html()?;
+		let html = helpers::get_html(req)?;
 
 		let island_props = html
 			.select_first("[props*=pages]")
@@ -317,7 +306,7 @@ impl Source for AsuraScans {
 
 impl Home for AsuraScans {
 	fn get_home(&self) -> Result<HomeLayout> {
-		let html = Request::get(BASE_URL)?.html()?;
+		let html = helpers::get_html(Request::get(BASE_URL)?)?;
 
 		let mut components = Vec::new();
 
@@ -447,7 +436,7 @@ impl ListingProvider for AsuraScans {
 	fn get_manga_list(&self, listing: Listing, page: i32) -> Result<MangaPageResult> {
 		match listing.id.as_str() {
 			"Ranking" => {
-				let html = Request::get(format!("{BASE_URL}/series-ranking"))?.html()?;
+				let html = helpers::get_html(Request::get(format!("{BASE_URL}/series-ranking"))?)?;
 				let entries = html
 					.select(".comics-ranking-list > a")
 					.map(|els| {
